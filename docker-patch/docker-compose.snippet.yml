@@ -1,0 +1,51 @@
+# Drop-in replacement for the `ghost:` service block in your existing compose.
+# Only the `image:` line changes — everything else (env, volumes, labels) stays.
+#
+# Assumes this folder lives at: <repo-root>/ghost-mail-templates/docker-patch/
+# Adjust `context:` path if you placed it elsewhere.
+
+services:
+  ghost:
+    build:
+      context: ./ghost-mail-templates/docker-patch
+    restart: always
+    environment:
+      database__client: mysql
+      database__connection__host: db
+      database__connection__user: root
+      database__connection__password: example
+      database__connection__database: ghost
+      url: https://${GHOST_HOST}
+
+      tinybird__tracker__endpoint: https://${GHOST_HOST}/.ghost/analytics/api/v1/page_hit
+      tinybird__adminToken: ${TINYBIRD_ADMIN_TOKEN}
+      tinybird__workspaceId: ${TINYBIRD_WORKSPACE_ID}
+      tinybird__tracker__datasource: analytics_events
+      tinybird__stats__endpoint: ${TINYBIRD_API_URL}
+
+      mail__transport: SMTP
+      mail__options__host: smtp.gmail.com
+      mail__options__port: 587
+      mail__options__secure: false
+      mail__options__auth__user: pytlewskimarcel@gmail.com
+      mail__options__auth__pass: ${SMTP_PASSWORD}
+      mail__from: "'Pravda' <pytlewskimarcel@gmail.com>"
+
+    volumes:
+      - ghost:/var/lib/ghost/content
+    depends_on:
+      - db
+      - traffic-analytics
+    networks:
+      - dokploy-network
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=dokploy-network"
+      - "traefik.http.routers.ghost.rule=Host(`${GHOST_HOST}`)"
+      - "traefik.http.routers.ghost.entrypoints=websecure"
+      - "traefik.http.routers.ghost.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.ghost.priority=10"
+      - "traefik.http.routers.ghost.service=ghost"
+      - "traefik.http.services.ghost.loadbalancer.server.port=2368"
+      - "traefik.http.middlewares.ghostHeader.headers.customrequestheaders.x-ghost-proxy=true"
+      - "traefik.http.routers.ghost.middlewares=ghostHeader"
