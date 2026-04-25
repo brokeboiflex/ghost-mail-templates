@@ -1,13 +1,15 @@
-# Drop-in replacement for the `ghost:` service block in your existing compose.
-# Only the `image:` line changes — everything else (env, volumes, labels) stays.
+# Drop-in patch for the `ghost:` service in your existing compose.
+# Bind-mounts the four template directories over the originals inside ghost:6.
+# No Dockerfile, no image build — just paths.
 #
-# Assumes this folder lives at: <repo-root>/ghost-mail-templates/docker-patch/
-# Adjust `context:` path if you placed it elsewhere.
+# Assumes this folder lives at <repo-root>/ghost-mail-templates/docker-patch/.
+# Adjust the relative paths if you placed it elsewhere.
+#
+# Comment out any volume line to keep Ghost's defaults for that email category.
 
 services:
   ghost:
-    build:
-      context: ./ghost-mail-templates/docker-patch
+    image: ghost:6
     restart: always
     environment:
       database__client: mysql
@@ -33,6 +35,19 @@ services:
 
     volumes:
       - ghost:/var/lib/ghost/content
+
+      # 1. Newsletter — bulk send when publishing a post
+      - ./ghost-mail-templates/docker-patch/templates/newsletter:/var/lib/ghost/current/core/server/services/email-service/email-templates:ro
+
+      # 2. System / transactional — magic link, password reset, staff invites, test email
+      - ./ghost-mail-templates/docker-patch/templates/system:/var/lib/ghost/current/core/server/services/mail/templates:ro
+
+      # 3. Staff notifications — admin alerts: signups, donations, milestones, etc.
+      - ./ghost-mail-templates/docker-patch/templates/staff-notifications:/var/lib/ghost/current/core/server/services/staff/email-templates:ro
+
+      # 4. Member welcome wrapper — the "Welcome to {site}" email shell after signup
+      - ./ghost-mail-templates/docker-patch/templates/member-welcome:/var/lib/ghost/current/core/server/services/member-welcome-emails/email-templates:ro
+
     depends_on:
       - db
       - traffic-analytics

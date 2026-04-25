@@ -67,7 +67,30 @@ ghost-mail-templates/
 
 Drop `ghost-mail-templates/` next to your `docker-compose.yml` (or anywhere reachable by a relative path).
 
-### 2. Switch your `ghost:` service from `image:` to `build:`
+### 2. Add bind-mounts to your `ghost:` service (recommended)
+
+Keep `image: ghost:6` and overlay the four template directories as read-only volumes. No image build, no Dockerfile needed.
+
+```diff
+ services:
+   ghost:
+     image: ghost:6
+     restart: always
+     volumes:
+       - ghost:/var/lib/ghost/content
++      - ./ghost-mail-templates/docker-patch/templates/newsletter:/var/lib/ghost/current/core/server/services/email-service/email-templates:ro
++      - ./ghost-mail-templates/docker-patch/templates/system:/var/lib/ghost/current/core/server/services/mail/templates:ro
++      - ./ghost-mail-templates/docker-patch/templates/staff-notifications:/var/lib/ghost/current/core/server/services/staff/email-templates:ro
++      - ./ghost-mail-templates/docker-patch/templates/member-welcome:/var/lib/ghost/current/core/server/services/member-welcome-emails/email-templates:ro
+```
+
+Comment out any of the four lines to keep Ghost's defaults for that email category. Mailgun env vars, MySQL, Traefik labels, Tinybird analytics — untouched. Ghost's runtime is identical; only the HTML it generates is different.
+
+A complete annotated example is at [`docker-patch/docker-compose.snippet.yml`](docker-patch/docker-compose.snippet.yml).
+
+### 2b. Alternative: build a custom image
+
+If you'd rather ship a self-contained image (e.g. push to a registry, run on multiple hosts without sharing the templates folder), use the Dockerfile instead:
 
 ```diff
  services:
@@ -75,12 +98,9 @@ Drop `ghost-mail-templates/` next to your `docker-compose.yml` (or anywhere reac
 -    image: ghost:6
 +    build:
 +      context: ./ghost-mail-templates/docker-patch
-     restart: always
-     environment:
-       # ...everything else stays exactly as it is
 ```
 
-Mailgun env vars, MySQL, Traefik labels, Tinybird analytics — untouched. Ghost's runtime is identical; only the HTML it generates is different. A complete annotated example is at [`docker-patch/docker-compose.snippet.yml`](docker-patch/docker-compose.snippet.yml).
+The Dockerfile in `docker-patch/` does the same `COPY` work the bind-mounts do, baked into the image. For Dokploy with git-based deploys, the bind-mount approach is simpler and faster.
 
 ### 3. Edit only what you want to change
 
