@@ -9,7 +9,7 @@
 
 services:
   ghost:
-    image: ghost:6
+    image: ghost:6.33.0
     restart: always
     environment:
       database__client: mysql
