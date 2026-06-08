@@ -1,3 +1,4 @@
+
 # ghost-mail-templates
 
 Customize what Ghost's emails look like — **all of them**, not just the newsletter — without forking Ghost, without abandoning Mailgun, without losing native analytics or paywall handling.
@@ -19,13 +20,61 @@ The official `ghost:6` image (verified against version `6.32.0`) ships email tem
 | Folder | What it covers | Sends when… | In-image destination |
 |---|---|---|---|
 | `templates/newsletter/` | Bulk newsletter to subscribers | A post is published with "Email to subscribers" enabled | `core/server/services/email-service/email-templates/` |
-| `templates/system/` | Magic links, password resets, staff invites, "send test email" button | A user signs in / requests reset / is invited / admin tests SMTP | `core/server/services/mail/templates/` |
+| `templates/system/` | Staff/admin transactional: password resets, staff invites, "send test email" button, transactional wrappers | A staff user requests a reset / is invited / admin tests SMTP | `core/server/services/mail/templates/` |
 | `templates/staff-notifications/` | Admin-facing alerts: new signup, donation, gift, milestone, paid started, paid cancellation, recommendation | A member event happens that staff opted to receive notifications for | `core/server/services/staff/email-templates/` |
 | `templates/member-welcome/` | Welcome email wrapper shown after signup | A member signs up (free or paid) | `core/server/services/member-welcome-emails/email-templates/` |
 
 All files were copied directly from a running `ghost:6` container — they match what your image actually loads, byte-for-byte.
 
 `/var/lib/ghost/current` is a symlink to `/var/lib/ghost/versions/<X.Y.Z>` created by `ghost install`. `COPY` instructions targeting `current/...` resolve through the symlink to the active version, so the override survives version bumps as long as upstream paths don't move.
+
+## The fifth category: member emails are i18n, not templates
+
+The four folders above do **not** cover the member-facing magic-link emails — sign in, sign up, subscribe confirmation, email-change confirmation. Those are the ones a *reader* receives, e.g. the "Welcome back! Here's your code to sign in" email with the one-time code and "Sign in now" button.
+
+Unlike the transactional templates, these aren't standalone HTML files you can swap. Ghost builds them in code, one JS module per email:
+
+```
+core/server/services/members/emails/
+├── signin.js          magic-link sign in (one-time code + button)
+├── signup.js          new-member sign up confirmation
+├── subscribe.js       subscribe confirmation
+└── updateEmail.js     email-change confirmation
+```
+
+Every visible string in those modules is wrapped in Ghost's i18n `t()` helper, and the markup (the table layout, the colored button, the code box) is baked into the `.js`. So there are **two different things you might want to change, with two different mechanisms**:
+
+| Want to change | Where it lives | How to override |
+|---|---|---|
+| **Wording / language** (translate, reword) | `@tryghost/i18n/locales/<lang>/ghost.json` | Bind-mount a completed locale file (below) |
+| **Layout / colors / structure** | the `.js` modules themselves | Bind-mount the patched `.js` over the original (fragile — see caveat) |
+
+### Translating member emails (the common case)
+
+Ghost picks the locale from the site language (Settings → General). For a Polish site it loads `pl/ghost.json`; any key whose value is `""` falls back to English — which is why a non-English site often gets **half-translated** member emails: upstream simply hasn't filled in the newer keys (the one-time-code sign-in strings are a frequent offender).
+
+Fix by completing the locale file and bind-mounting it over the image's copy:
+
+```yaml
+- ./i18n/locales/pl/ghost.json:/var/lib/ghost/current/node_modules/@tryghost/i18n/locales/pl/ghost.json:ro
+```
+
+Steps:
+
+1. Pull the locale that ships with your exact version (keys change between releases):
+   ```bash
+   docker run --rm ghost:6 cat /var/lib/ghost/current/node_modules/@tryghost/i18n/locales/pl/ghost.json > pl-ghost.json
+   ```
+   (or fetch it from `github.com/TryGhost/Ghost` at tag `v<your-version>`, path `ghost/i18n/locales/<lang>/ghost.json`).
+2. Fill every `""` value with a translation. Preserve placeholders (`{siteTitle}`, `{otc}`, `{email}`, …), the `%%{...}%%` markers, the `_one/_few/_many/_other` plural suffixes, and any inline HTML.
+3. Place the result at `i18n/locales/<lang>/ghost.json` and add the bind-mount above.
+4. On a version bump, re-diff: `docker run --rm ghost:6 cat .../locales/<lang>/ghost.json` and translate any keys upstream added.
+
+This is the same lazy-but-correct pattern as the template bind-mounts: no fork, no image build, Ghost's send pipeline untouched — only the strings it interpolates change. To find which strings a given email uses, grep the module: `grep -oE "t\('[^']+'" core/server/services/members/emails/signin.js`.
+
+### Restyling member emails (rarely needed)
+
+If you must change the layout or colors (not just wording), bind-mount the patched module, e.g. `./members-emails/signin.js:/var/lib/ghost/current/core/server/services/members/emails/signin.js:ro`. **Caveat:** this is version-specific application code, not a stable template — re-verify it against every Ghost upgrade, since a changed signature or import will break the email (or boot). Prefer changing wording via i18n; only patch the `.js` when the structure itself is the problem.
 
 ## Repo layout
 
